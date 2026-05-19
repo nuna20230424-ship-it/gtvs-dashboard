@@ -34,6 +34,9 @@ venv/
 pending_upload.jsonl
 version_history.jsonl
 
+# 운영 로그 (start-dashboard.ps1 산출물)
+logs/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -101,14 +101,20 @@ Tailscale 설치 자체가 보안 이슈로 판단되어 폐기. `context-notes.
 - [x] **검증**: `python dry_run.py --records 3 --history 2` 실행 → `update_records=3, version_history=2` 로 실제 INSERT 확인
 
 ### Phase 5 — 운영 자동화 (Windows 작업 스케줄러)
-- [ ] Next.js 자동 시작 — `pm2` 또는 작업 스케줄러로 부팅 시 `next start` 기동
-- [ ] DB 백업 작업 — 매일 새벽 3시 `sqlite3 gtvs.db ".backup ..."` → Google Drive 폴더로 복사
-- [ ] 30일 이상 된 백업 자동 삭제
+- [x] `scripts/backup.py` 신규 — SQLite online backup API + Google Drive 폴더 복사 + 30일 자동 삭제
+- [x] `scripts/start-dashboard.ps1` 신규 — Next.js production 서버 hidden 기동
+- [x] `docs/laptop-operations.md` 신규 — 작업 스케줄러 등록 PowerShell 명령 + 트러블슈팅
+- [x] **검증**: `backup.py` 실행 시 SQLite online backup 정상 동작 (gtvs-YYYYMMDD.db 생성 확인)
+- [x] `.gitignore` 에 `logs/` 추가
+- [ ] **사용자 작업**: `Register-ScheduledTask "GTVS Dashboard"` (로그온 시 자동 기동)
+- [ ] **사용자 작업**: `Register-ScheduledTask "GTVS Backup"` (매일 새벽 3시)
+- [ ] **사용자 작업**: 1회 수동 실행 + Google Drive 동기화 확인
 
 ### Phase 6 — 자체 테스트
-- [x] `db/migrations/001_init.sql` + `002_seed.sql`로 `gtvs.db` 초기화 → 테이블/시드 확인 (Phase 2 사전 검증에서 함께 처리됨)
-- [ ] NextAuth용 사용자 1명 등록 (시드 또는 1회 스크립트)
-- [ ] Python `dry_run.py --records 3 --history 2` → `gtvs.db`에 INSERT 확인
-- [ ] `npm run dev` → 로그인 → Overview/Records/History에 데이터 표시 확인
-- [ ] 백업 작업 1회 수동 실행 → Google Drive 폴더에 파일 생성 확인
-- [ ] `patch_main.md` 따라 `gtvs_updater/main.py` 실제 패치 + 1사이클 검증
+- [x] `db/migrations/001_init.sql` + `002_seed.sql` 로 `gtvs.db` 초기화 → 테이블/시드 확인 (Phase 2 사전 검증)
+- [x] Python `dry_run.py --records 3 --history 2` → `gtvs.db` 에 INSERT 확인 (Phase 4 검증 — update_records 3, version_history 2)
+- [x] `backup.py` 실행 시 online backup API + 파일 생성 동작 (Phase 5 검증 — 임시 폴더로 검증)
+- [ ] **사용자 작업**: 초기 사용자 1명 등록 (`node --env-file=.env.local scripts/create_user.mjs <email> <pw> <name>`)
+- [ ] **사용자 작업**: `npm run dev` → 로그인 → Overview/Records/History 에 더미 데이터 표시 확인
+- [ ] **사용자 작업**: `patch_main.md` 따라 `gtvs_updater/main.py` 실제 패치 + 1사이클 실행 → 대시보드 실 데이터 표시 확인
+- [ ] **사용자 작업**: 검증 후 더미 데이터 정리 (`STB-DRY-*` row 삭제)
