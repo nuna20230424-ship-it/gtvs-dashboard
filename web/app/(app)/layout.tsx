@@ -1,5 +1,5 @@
-// 인증 사용자용 공통 레이아웃: 사이드바 + 헤더 자리 확보
-import { createClient } from "@/lib/supabase/server";
+// 인증 사용자용 공통 레이아웃 — NextAuth session 으로 가드, 사이드바 + 본문 영역
+import { auth } from "@/auth";
 import { Sidebar } from "@/components/sidebar";
 
 export default async function AppLayout({
@@ -7,17 +7,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await auth();
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       <Sidebar />
       <div
         className="flex flex-1 flex-col overflow-hidden"
-        data-user-email={user?.email ?? ""}
+        data-user-email={session?.user?.email ?? ""}
       >
         {children}
       </div>

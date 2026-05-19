@@ -1,9 +1,9 @@
-// active 컬럼 토글 스위치: Supabase 직접 update + router.refresh
+// active 컬럼 토글 — toggleActive server action 호출 + router.refresh
 "use client";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { toggleActive } from "@/app/actions/settings";
 import { useToast } from "@/components/ui/toast";
 
 interface ActiveToggleProps {
@@ -22,14 +22,10 @@ export function ActiveToggle({ table, id, active }: ActiveToggleProps) {
     const next = !value;
     setValue(next);
     startTransition(async () => {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from(table)
-        .update({ active: next })
-        .eq("id", id);
-      if (error) {
+      const result = await toggleActive(table, id, next);
+      if (!result.ok) {
         setValue(!next);
-        toast(`업데이트 실패: ${error.message}`, "error");
+        toast(`업데이트 실패: ${result.error}`, "error");
         return;
       }
       router.refresh();

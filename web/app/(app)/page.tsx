@@ -1,67 +1,27 @@
-// Overview 페이지: 단말 × 패키지 최신 버전 매트릭스
-import { createClient } from "@/lib/supabase/server";
+// Overview 페이지 — 단말 × 패키지 최신 버전 매트릭스
+import { auth } from "@/auth";
 import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
+import {
+  listActiveDevices,
+  listActivePackages,
+  listLatestRecordsForOverview,
+  type OverviewRow,
+} from "@/lib/queries";
 import {
   formatDateTime,
   statusBadgeClass,
   trackBadgeClass,
 } from "@/lib/format";
 
-interface DeviceRow {
-  id: number;
-  name: string;
-  track: string;
-  active: boolean;
-}
-
-interface PackageRow {
-  id: number;
-  package: string;
-  app_name: string | null;
-  active: boolean;
-}
-
-interface UpdateRecord {
-  device: string;
-  package: string;
-  version_after: string | null;
-  status: string;
-  checked_at: string;
-}
-
 export default async function OverviewPage() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const [{ data: devices }, { data: packages }, { data: records }] =
-    await Promise.all([
-      supabase
-        .from("devices")
-        .select("id,name,track,active")
-        .eq("active", true)
-        .order("track")
-        .order("name"),
-      supabase
-        .from("packages")
-        .select("id,package,app_name,active")
-        .eq("active", true)
-        .order("package"),
-      supabase
-        .from("update_records")
-        .select("device,package,version_after,status,checked_at")
-        .order("checked_at", { ascending: false })
-        .limit(2000),
-    ]);
-
-  const deviceList = (devices ?? []) as DeviceRow[];
-  const packageList = (packages ?? []) as PackageRow[];
-  const recordList = (records ?? []) as UpdateRecord[];
+  const session = await auth();
+  const deviceList = listActiveDevices();
+  const packageList = listActivePackages();
+  const recordList = listLatestRecordsForOverview(2000);
 
   // 단말×패키지별 최신 1건만 유지
-  const latest = new Map<string, UpdateRecord>();
+  const latest = new Map<string, OverviewRow>();
   for (const r of recordList) {
     const key = `${r.device}::${r.package}`;
     if (!latest.has(key)) latest.set(key, r);
@@ -69,7 +29,7 @@ export default async function OverviewPage() {
 
   return (
     <>
-      <Header title="Overview" email={user?.email} />
+      <Header title="Overview" email={session?.user?.email ?? undefined} />
       <main className="flex-1 overflow-auto p-6">
         <div className="overflow-auto rounded-md border border-gray-200 bg-white">
           <table className="w-full text-sm">

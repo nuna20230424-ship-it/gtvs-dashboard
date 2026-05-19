@@ -1,2 +1,4 @@
-// NextAuth Route Handler — GET/POST 모두 NextAuth handlers 로 위임
-export { GET, POST } from "@/auth";
+// NextAuth Route Handler — auth.ts 의 handlers 를 GET/POST 로 분해 export
+import { handlers } from "@/auth";
+
+export const { GET, POST } = handlers;

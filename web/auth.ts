@@ -1,7 +1,8 @@
-// NextAuth v5 설정 — Credentials Provider (이메일/비밀번호로 users 테이블 검증)
+// NextAuth 풀 설정 — Credentials Provider 에서 users 테이블 + bcrypt 검증 (Node runtime 전용)
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
+import authConfig from "./auth.config";
 import { db } from "@/lib/db";
 
 type UserRow = {
@@ -12,12 +13,7 @@ type UserRow = {
 };
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  pages: {
-    signIn: "/login",
-  },
-  session: {
-    strategy: "jwt",
-  },
+  ...authConfig,
   providers: [
     Credentials({
       credentials: {
@@ -47,16 +43,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    authorized: ({ request, auth }) => {
-      const pathname = request.nextUrl.pathname;
-      const isLogin = pathname === "/login";
-      const isPublicAsset =
-        pathname.startsWith("/_next") ||
-        pathname.startsWith("/api/auth") ||
-        pathname === "/favicon.ico";
-      if (isLogin || isPublicAsset) return true;
-      return !!auth?.user;
-    },
-  },
 });

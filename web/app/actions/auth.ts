@@ -1,24 +1,31 @@
-// Supabase 인증 관련 server actions (login/logout)
+// NextAuth 기반 로그인/로그아웃 server actions
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { AuthError } from "next-auth";
+import { signIn, signOut } from "@/auth";
 
 export async function login(formData: FormData): Promise<void> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
 
-  const supabase = createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirectTo: "/",
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      const code =
+        error.type === "CredentialsSignin" ? "invalid" : "unknown";
+      redirect(`/login?error=${code}`);
+    }
+    // NEXT_REDIRECT 등 내부 동작 throw 는 re-throw 해야 정상 동작
+    throw error;
   }
-  redirect("/");
 }
 
 export async function logout(): Promise<void> {
-  const supabase = createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+  await signOut({ redirectTo: "/login" });
 }
