@@ -1,4 +1,4 @@
-# supabase_sink 동작을 검증하는 CLI 더미 데이터 송신기
+# sqlite_sink 동작을 검증하는 CLI 더미 데이터 송신기
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from supabase_sink import (
+from sqlite_sink import (
     flush_pending_queue,
     push_update_records,
     push_version_history,
@@ -66,7 +66,7 @@ def _make_history(n: int) -> list[dict]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Supabase sink 동작 검증")
+    parser = argparse.ArgumentParser(description="SQLite sink 동작 검증")
     parser.add_argument("--records", type=int, default=0,
                         help="가짜 UpdateRecord N개 전송")
     parser.add_argument("--history", type=int, default=0,
@@ -77,7 +77,7 @@ def main() -> int:
 
     if args.flush:
         sent = flush_pending_queue()
-        print(f"큐 플러시 완료. Supabase 반영 행: {sent}")
+        print(f"큐 플러시 완료. DB 반영 행: {sent}")
 
     if args.records > 0:
         records = _make_records(args.records)

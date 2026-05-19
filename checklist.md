@@ -68,26 +68,37 @@ Tailscale 설치 자체가 보안 이슈로 판단되어 폐기. `context-notes.
 - [x] **사전 검증 (옵션 C)** — `gtvs.db` 실제 생성 + 통합 검증 명령 동작 확인 완료
 - [x] 가이드 3·4단계를 통합 검증 명령 1개로 단순화 (`sqlite_sequence` 필터 포함)
 
-### Phase 3 — Next.js 전환 (Supabase 제거 → SQLite + NextAuth)
-- [ ] `package.json` 의존성 교체 (`@supabase/*` 제거, `better-sqlite3`, `next-auth`, `bcryptjs` 추가)
-- [ ] `lib/db.ts` 신규 — `better-sqlite3` 싱글톤, WAL 모드 활성화
-- [ ] `lib/auth.ts` 신규 — NextAuth Credentials Provider (users 테이블 조회)
-- [ ] `app/api/auth/[...nextauth]/route.ts` 신규
-- [ ] `app/api/records/route.ts`, `app/api/history/route.ts`, `app/api/overview/route.ts` 신규 (조회용)
-- [ ] `app/api/devices/route.ts`, `app/api/packages/route.ts` 신규 (Settings 페이지용)
-- [ ] `middleware.ts` → NextAuth 기반으로 교체
-- [ ] 로그인 페이지 → NextAuth `signIn()`으로 교체
-- [ ] 각 페이지(Overview/Records/History/Settings) 데이터 페칭을 `fetch('/api/...')`로 교체
-- [ ] `.env.local` 신규 — `DB_PATH`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL=http://localhost:3000`
-- [ ] `npx next build` 통과 확인
+### Phase 3 — Next.js 전환 (Supabase 제거 → SQLite + NextAuth) (완료)
+- [x] `package.json` 의존성 교체 (`@supabase/*` 제거, `better-sqlite3@^12`, `next-auth@5.0.0-beta.25`, `bcryptjs@^2.4.3` + types)
+- [x] `lib/db.ts` 신규 — `better-sqlite3` 싱글톤, WAL/foreign_keys 보장, globalThis 캐시(HMR 안전)
+- [x] **`auth.config.ts` 신규 — edge-safe 기본 설정** (middleware 호환 위해 분리, 처음 계획에 없던 추가)
+- [x] `auth.ts` — NextAuth v5 Credentials Provider (users 테이블 + bcrypt 검증)
+- [x] `app/api/auth/[...nextauth]/route.ts` — handlers 분해 export
+- [x] ~~조회용 API Route~~ — **B안(서버 컴포넌트 직접 DB 호출)으로 결정되어 미작성**. `lib/queries.ts` + `lib/filters.ts` 로 대체
+- [x] `lib/queries.ts` 신규 — devices/packages/records/history/overview 쿼리 함수
+- [x] `lib/filters.ts` 신규 — URL searchParams → 필터/페이지네이션 (API Route 전환 대비 분리)
+- [x] `app/actions/settings.ts` 신규 — active 토글 server action
+- [x] `middleware.ts` — NextAuth(authConfig) 로 교체 (edge runtime safe)
+- [x] 로그인 페이지 — NextAuth signIn 기반 server action, 한국어 에러 메시지
+- [x] 각 페이지(Overview/Records/History/Settings/Tests) `lib/queries` 직접 호출로 교체
+- [x] `app/(app)/settings/active-toggle.tsx` — `toggleActive` server action 호출
+- [x] `lib/supabase/` 삭제, `supabase/` → `docs/archive/supabase/` 이동
+- [x] `.env.local` 신규 — `DB_PATH`, `AUTH_SECRET` (32B 랜덤), `AUTH_URL`, `AUTH_TRUST_HOST`
+- [x] `next.config.mjs` — `serverComponentsExternalPackages: ['better-sqlite3']`
+- [x] `npx tsc --noEmit` 0 errors
+- [x] `npx next build` 통과 (10 routes 정상 빌드)
 
-### Phase 4 — Python sink 전환 (HTTP → SQLite 직접)
-- [ ] `integration/supabase_sink.py` 폐기, `integration/sqlite_sink.py` 신규 작성
+### Phase 4 — Python sink 전환 (HTTP → SQLite 직접) (완료)
+- [x] `integration/supabase_sink.py` 폐기, `integration/sqlite_sink.py` 신규 작성
   - `sqlite3` 표준 라이브러리 사용
-  - `insert_update_records(records: list)`, `insert_version_history(entries: list)` 동일 인터페이스
-- [ ] `dry_run.py` sink 교체
-- [ ] `patch_main.md` 텍스트 업데이트 (모듈명 변경, .env 항목 변경)
-- [ ] `.env` 신규 — `GTVS_DB_PATH=C:\GTVS\dashboard\db\gtvs.db`
+  - `push_update_records`, `push_version_history`, `flush_pending_queue` 동일 시그니처 유지
+  - 락 발생 시 0.5초 sleep 후 1회 재시도, 실패 시 큐로 폴백
+- [x] `dry_run.py` sink 교체 (`from sqlite_sink import ...`)
+- [x] `patch_main.md` 텍스트 업데이트 (모듈명 `supabase_sink` → `sqlite_sink`, 환경변수 변경)
+- [x] `README.md` 업데이트 (Supabase 셋업 → SQLite 셋업, 트러블슈팅 항목 교체)
+- [x] `.env.example` — `GTVS_DB_PATH=C:/GTVS/dashboard/db/gtvs.db`
+- [x] `requirements.txt` — `requests` 제거, `python-dotenv` 만 유지
+- [x] **검증**: `python dry_run.py --records 3 --history 2` 실행 → `update_records=3, version_history=2` 로 실제 INSERT 확인
 
 ### Phase 5 — 운영 자동화 (Windows 작업 스케줄러)
 - [ ] Next.js 자동 시작 — `pm2` 또는 작업 스케줄러로 부팅 시 `next start` 기동
