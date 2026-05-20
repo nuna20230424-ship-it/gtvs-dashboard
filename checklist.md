@@ -114,7 +114,7 @@ Tailscale 설치 자체가 보안 이슈로 판단되어 폐기. `context-notes.
 - [x] `db/migrations/001_init.sql` + `002_seed.sql` 로 `gtvs.db` 초기화 → 테이블/시드 확인 (Phase 2 사전 검증)
 - [x] Python `dry_run.py --records 3 --history 2` → `gtvs.db` 에 INSERT 확인 (Phase 4 검증 — update_records 3, version_history 2)
 - [x] `backup.py` 실행 시 online backup API + 파일 생성 동작 (Phase 5 검증 — 임시 폴더로 검증)
-- [ ] **사용자 작업**: 초기 사용자 1명 등록 (`node --env-file=.env.local scripts/create_user.mjs <email> <pw> <name>`)
+- [ ] **사용자 작업**: 초기 사용자 1명 등록 (`node --env-file=.env.local scripts/create_user.mjs admin@kaongroup.com "비밀번호" "관리자"` — PowerShell 에서 `<>` 는 redirection 예약 문자라 쓰지 말고 따옴표 사용)
 - [ ] **사용자 작업**: `npm run dev` → 로그인 → Overview/Records/History 에 더미 데이터 표시 확인
 - [ ] **사용자 작업**: `patch_main.md` 따라 `gtvs_updater/main.py` 실제 패치 + 1사이클 실행 → 대시보드 실 데이터 표시 확인
 - [ ] **사용자 작업**: 검증 후 더미 데이터 정리 (`STB-DRY-*` row 삭제)

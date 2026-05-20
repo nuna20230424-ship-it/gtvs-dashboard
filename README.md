@@ -59,9 +59,9 @@ dashboard/
 이미 Phase 1~5 가 완료된 상태. 사용자가 직접 할 일은 Phase 6 뿐.
 
 ```powershell
-# 1) 초기 사용자 등록 (한 번만)
+# 1) 초기 사용자 등록 (한 번만) — 비밀번호는 따옴표로 감싸기 (PowerShell 에서 <,> 는 예약 문자라 쓸 수 없음)
 cd C:\GTVS\dashboard\web
-node --env-file=.env.local scripts/create_user.mjs admin@kaongroup.com <비밀번호> "관리자"
+node --env-file=.env.local scripts/create_user.mjs admin@kaongroup.com "MySecretPwd123!" "관리자"
 
 # 2) 대시보드 production 빌드 + 기동
 npm run build
