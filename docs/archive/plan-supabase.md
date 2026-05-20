@@ -1,4 +1,12 @@
-# GTVS Dashboard - 구현 계획
+# [폐기] GTVS Dashboard - 구현 계획 (Supabase 시절)
+
+> **이 문서는 폐기됨 (2026-05-19~20).**
+> Supabase 기반 초기 계획. 보안 검토 결과 외부 SaaS 의존을 제거하고 노트북 단독 + SQLite 로 전환됨.
+> 현재 진행·계획 요약은 `docs/progress.md`, 결정 흐름은 `context-notes.md` 참조.
+
+---
+
+# GTVS Dashboard - 구현 계획 (당시 안)
 
 ## 목표
 

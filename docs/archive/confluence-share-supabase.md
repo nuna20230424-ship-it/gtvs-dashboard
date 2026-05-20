@@ -1,4 +1,12 @@
-# GTVS Dashboard 구축 보고
+# [폐기] GTVS Dashboard 구축 보고 (Supabase 시절)
+
+> **이 문서는 폐기됨.**
+> Supabase 시절의 컨플루언스 공유용 보고. 노트북 단독 + SQLite 로 전환됨에 따라 폐기.
+> 최신 공유용 문서는 `docs/progress.md` 참조.
+
+---
+
+# GTVS Dashboard 구축 보고 (Supabase 시절, 참조용)
 
 > **작성일**: 2026-05-19
 > **작성자**: keonhee.cho@kaongroup.com (with Claude Code)
