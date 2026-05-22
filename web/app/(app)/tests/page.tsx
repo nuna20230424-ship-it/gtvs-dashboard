@@ -1,24 +1,72 @@
-// 자동화 테스트 트리거 페이지 — 단말×패키지 그리드 (현재는 placeholder)
+// 자동화 테스트 트리거 페이지 — 단말×패키지 그리드. ?only=today 로 TEST 대상만 활성
+import Link from "next/link";
 import { auth } from "@/auth";
 import { Header } from "@/components/header";
 import { TestsGrid } from "./tests-grid";
-import { listActiveDevices, listActivePackages } from "@/lib/queries";
+import {
+  listActiveDevices,
+  listActivePackages,
+  listChangedCellsSinceReport,
+} from "@/lib/queries";
+import { reportingWindowStartIso } from "@/lib/time";
+import { formatDateTime } from "@/lib/format";
 
-export default async function TestsPage() {
+interface SearchParams {
+  only?: string;
+}
+
+export default async function TestsPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const session = await auth();
   const devices = listActiveDevices();
   const packages = listActivePackages();
+  const changedCells = listChangedCellsSinceReport();
+  const windowStart = reportingWindowStartIso();
+  const onlyToday = searchParams.only === "today";
 
   return (
     <>
       <Header title="Tests" email={session?.user?.email ?? undefined} />
-      <main className="flex-1 overflow-auto p-6">
+      <main className="flex-1 space-y-4 overflow-auto p-6">
+        <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600">
+            <span>
+              TEST 보고 윈도우
+              <span className="ml-2 font-mono text-gray-900">
+                {formatDateTime(windowStart)} ~
+              </span>
+            </span>
+            <span className="text-gray-300">·</span>
+            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-900">
+              {changedCells.size}개 대상
+            </span>
+          </div>
+          <Link
+            href={onlyToday ? "/tests" : "/tests?only=today"}
+            className={`rounded-md border px-3 py-1.5 text-xs ${
+              onlyToday
+                ? "border-red-300 bg-red-50 text-red-900 hover:bg-red-100"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            {onlyToday ? "전체 보기" : "TEST 대상만 보기"}
+          </Link>
+        </div>
         <TestsGrid
-          devices={devices.map((d) => ({ name: d.name, track: d.track }))}
+          devices={devices.map((d) => ({
+            name: d.name,
+            track: d.track,
+            model: d.model,
+          }))}
           packages={packages.map((p) => ({
             package: p.package,
             app_name: p.app_name,
           }))}
+          changedKeys={[...changedCells]}
+          onlyToday={onlyToday}
         />
       </main>
     </>

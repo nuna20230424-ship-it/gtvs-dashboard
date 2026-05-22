@@ -7,8 +7,9 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { HistoryFilters } from "@/components/filters/history-filters";
 import {
   listHistory,
-  listDeviceNames,
+  listAllDevices,
   listPackageNames,
+  countAllHistory,
 } from "@/lib/queries";
 import { parseHistoryFilters, parsePagination } from "@/lib/filters";
 import {
@@ -16,6 +17,7 @@ import {
   sourceBadgeClass,
   trackBadgeClass,
 } from "@/lib/format";
+import { ClearHistoryButton } from "./clear-history-button";
 
 const PAGE_SIZE = 50;
 
@@ -39,8 +41,22 @@ export default async function HistoryPage({
   const filters = parseHistoryFilters(searchParams);
   const pagination = parsePagination(searchParams, PAGE_SIZE);
   const { rows, count } = listHistory(filters, pagination);
-  const devices = listDeviceNames();
+  const allDevices = listAllDevices();
   const packages = listPackageNames();
+  const totalCount = countAllHistory();
+
+  // 단말 이름(stb-01) → 표시 라벨(설정된 모델명 fallback) 매핑
+  const deviceLabelMap = new Map<string, string>();
+  for (const d of allDevices) {
+    deviceLabelMap.set(
+      d.name,
+      d.model && d.model.trim() !== "" ? d.model : d.name
+    );
+  }
+  const deviceOptions = allDevices.map((d) => ({
+    name: d.name,
+    label: d.model && d.model.trim() !== "" ? d.model : d.name,
+  }));
 
   const page = Math.floor(pagination.offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
@@ -55,11 +71,32 @@ export default async function HistoryPage({
     return `/history?${next.toString()}`;
   };
 
+  const exportPageQuery = new URLSearchParams(baseQuery);
+  exportPageQuery.set("scope", "page");
+  exportPageQuery.set("page", String(page));
+  const exportAllQuery = new URLSearchParams(baseQuery);
+  exportAllQuery.set("scope", "all");
+
   return (
     <>
       <Header title="Version History" email={session?.user?.email ?? undefined} />
       <main className="flex-1 space-y-4 overflow-auto p-6">
-        <HistoryFilters devices={devices} packages={packages} />
+        <HistoryFilters devices={deviceOptions} packages={packages} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <ClearHistoryButton totalCount={totalCount} />
+          <a
+            href={`/api/export/history?${exportPageQuery.toString()}`}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            현재 페이지 .xlsx
+          </a>
+          <a
+            href={`/api/export/history?${exportAllQuery.toString()}`}
+            className="rounded-md border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-800"
+          >
+            필터 전체 .xlsx
+          </a>
+        </div>
 
         <Table>
           <THead>
@@ -78,7 +115,7 @@ export default async function HistoryPage({
                 <TD className="whitespace-nowrap">{formatDateTime(r.changed_at)}</TD>
                 <TD>
                   <div className="flex items-center gap-2">
-                    <span>{r.device}</span>
+                    <span>{deviceLabelMap.get(r.device) ?? r.device}</span>
                     <Badge className={trackBadgeClass(r.track)}>{r.track}</Badge>
                   </div>
                 </TD>

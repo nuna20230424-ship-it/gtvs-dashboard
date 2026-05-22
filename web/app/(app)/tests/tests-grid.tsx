@@ -1,4 +1,4 @@
-// 테스트 트리거 그리드 (클라이언트): Run Test 버튼은 placeholder
+// 테스트 트리거 그리드 (클라이언트): TEST 대상 셀은 빨강 강조 + onlyToday 모드 시 비대상 dim/disabled
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { trackBadgeClass } from "@/lib/format";
 interface Device {
   name: string;
   track: string;
+  model: string | null;
 }
 interface Package {
   package: string;
@@ -18,10 +19,19 @@ interface Package {
 interface TestsGridProps {
   devices: Device[];
   packages: Package[];
+  // `device::package` 형태. 보고 윈도우 안에 변경된 셀 키.
+  changedKeys: string[];
+  onlyToday: boolean;
 }
 
-export function TestsGrid({ devices, packages }: TestsGridProps) {
+export function TestsGrid({
+  devices,
+  packages,
+  changedKeys,
+  onlyToday,
+}: TestsGridProps) {
   const { toast } = useToast();
+  const changed = new Set(changedKeys);
 
   function runTest(_device: string, _pkg: string) {
     // TODO: 자동화 스크립트 연결
@@ -34,7 +44,7 @@ export function TestsGrid({ devices, packages }: TestsGridProps) {
         <thead className="bg-gray-50">
           <tr>
             <th className="sticky left-0 z-10 border-r border-gray-200 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600">
-              단말 \ 패키지
+              단말 / 패키지
             </th>
             {packages.map((p) => (
               <th
@@ -55,23 +65,32 @@ export function TestsGrid({ devices, packages }: TestsGridProps) {
           {devices.map((d) => (
             <tr key={d.name} className="border-t border-gray-200">
               <td className="sticky left-0 z-10 border-r border-gray-200 bg-white px-3 py-2 align-top">
-                <div className="font-medium text-gray-900">{d.name}</div>
+                <div className="font-medium text-gray-900">
+                  {d.model && d.model.trim() !== "" ? d.model : d.name}
+                </div>
                 <Badge className={trackBadgeClass(d.track)}>{d.track}</Badge>
               </td>
-              {packages.map((p) => (
-                <td
-                  key={p.package}
-                  className="border-l border-gray-200 px-3 py-2 align-middle"
-                >
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => runTest(d.name, p.package)}
+              {packages.map((p) => {
+                const isTarget = changed.has(`${d.name}::${p.package}`);
+                const dimmed = onlyToday && !isTarget;
+                return (
+                  <td
+                    key={p.package}
+                    className={`border-l border-gray-200 px-3 py-2 align-middle ${
+                      isTarget ? "bg-red-50" : ""
+                    } ${dimmed ? "opacity-30" : ""}`}
                   >
-                    Run Test
-                  </Button>
-                </td>
-              ))}
+                    <Button
+                      size="sm"
+                      variant={isTarget ? "destructive" : "outline"}
+                      onClick={() => runTest(d.name, p.package)}
+                      disabled={dimmed}
+                    >
+                      Run Test
+                    </Button>
+                  </td>
+                );
+              })}
             </tr>
           ))}
           {devices.length === 0 && (
