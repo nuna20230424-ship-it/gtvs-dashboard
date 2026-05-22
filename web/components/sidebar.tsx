@@ -8,6 +8,7 @@ import {
   ListChecks,
   History,
   PlayCircle,
+  RefreshCw,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -17,6 +18,7 @@ const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/records", label: "Records", icon: ListChecks },
   { href: "/history", label: "History", icon: History },
+  { href: "/updater", label: "Updater", icon: RefreshCw },
   { href: "/tests", label: "Tests", icon: PlayCircle },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
