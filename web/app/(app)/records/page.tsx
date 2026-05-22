@@ -1,33 +1,29 @@
-// 업데이트 조회 기록 페이지 — 필터/페이지네이션 지원 테이블 (SQLite 직접 조회)
-import Link from "next/link";
+// Records 페이지 — track 별 템플릿 (행=패키지, 단말별 서브 컬럼). 기본 track = beta
+import { Fragment } from "react";
 import { auth } from "@/auth";
 import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
-import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
-import { RecordsFilters } from "@/components/filters/records-filters";
-import { ErrorCell } from "./error-cell";
+import { LiveClock } from "@/components/live-clock";
+import { RecordsTemplateFilters } from "@/components/filters/records-template-filters";
 import {
-  listRecords,
-  listDeviceNames,
+  listChangedCellsSinceReport,
+  listChangedPackagesSinceReport,
   listPackageNames,
 } from "@/lib/queries";
-import { parseRecordsFilters, parsePagination } from "@/lib/filters";
-import {
-  formatDateTime,
-  statusBadgeClass,
-  trackBadgeClass,
-} from "@/lib/format";
+import { buildTemplate, type TemplateTrack } from "@/lib/template";
+import { statusBadgeClass, trackBadgeClass } from "@/lib/format";
+import { syncFromJsonl } from "@/lib/sync_jsonl";
 
-const PAGE_SIZE = 50;
+// updater 실행 직후 즉시 새 데이터 반영 + 상단 시각이 매 요청 갱신되도록
+export const dynamic = "force-dynamic";
 
 interface SearchParams {
   track?: string;
-  device?: string;
   package?: string;
-  status?: string;
-  from?: string;
-  to?: string;
-  page?: string;
+}
+
+function resolveTrack(raw: string | undefined): TemplateTrack {
+  return raw === "production" ? "production" : "beta";
 }
 
 export default async function RecordsPage({
@@ -35,106 +31,229 @@ export default async function RecordsPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const session = await auth();
-
-  const filters = parseRecordsFilters(searchParams);
-  const pagination = parsePagination(searchParams, PAGE_SIZE);
-  const { rows, count } = listRecords(filters, pagination);
-  const devices = listDeviceNames();
-  const packages = listPackageNames();
-
-  const page = Math.floor(pagination.offset / PAGE_SIZE) + 1;
-  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
-
-  const baseQuery = new URLSearchParams();
-  for (const [k, v] of Object.entries(searchParams)) {
-    if (v && k !== "page") baseQuery.set(k, String(v));
+  // 스케줄러 백그라운드 실행분이 페이지 진입 시 즉시 반영되도록
+  try {
+    syncFromJsonl();
+  } catch {
+    // 동기화 실패해도 페이지 자체는 렌더해야 함
   }
-  const linkFor = (p: number) => {
-    const next = new URLSearchParams(baseQuery);
-    next.set("page", String(p));
-    return `/records?${next.toString()}`;
-  };
+  const session = await auth();
+  const track = resolveTrack(searchParams.track);
+  const result = buildTemplate(track, { package: searchParams.package });
+  const allPackageNames = listPackageNames();
+  const nowIso = new Date().toISOString();
+  // 보고 윈도우(가장 최근 KST 09:00) 기반 TEST 대상 셀/패키지 — Overview 와 동일 기준
+  const changedCells = listChangedCellsSinceReport();
+  const changedPackages = listChangedPackagesSinceReport();
+
+  const exportQuery = new URLSearchParams();
+  exportQuery.set("track", track);
+  if (searchParams.package) exportQuery.set("package", searchParams.package);
+
+  const isBeta = track === "beta";
+  // meta 헤더 셀 공통 — rowSpan=2 로 sub-header 줄에 걸치게
+  const metaThClass =
+    "border-l border-gray-200 px-3 py-2 text-left font-medium text-gray-600 align-middle";
+  const firstMetaThClass =
+    "sticky left-0 z-10 border-r border-gray-200 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600 align-middle";
 
   return (
     <>
       <Header title="Update Records" email={session?.user?.email ?? undefined} />
       <main className="flex-1 space-y-4 overflow-auto p-6">
-        <RecordsFilters devices={devices} packages={packages} />
-
-        <Table>
-          <THead>
-            <TR>
-              <TH>조회시간</TH>
-              <TH>단말</TH>
-              <TH>패키지</TH>
-              <TH>앱이름</TH>
-              <TH>ref</TH>
-              <TH>이전버전</TH>
-              <TH>현재버전</TH>
-              <TH>상태</TH>
-              <TH>에러</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {rows.map((r) => (
-              <TR key={r.id}>
-                <TD className="whitespace-nowrap">{formatDateTime(r.checked_at)}</TD>
-                <TD>
-                  <div className="flex items-center gap-2">
-                    <span>{r.device}</span>
-                    <Badge className={trackBadgeClass(r.track)}>{r.track}</Badge>
-                  </div>
-                </TD>
-                <TD className="font-mono text-xs">{r.package}</TD>
-                <TD>{r.app_name ?? "—"}</TD>
-                <TD className="font-mono text-xs">{r.ref ?? "—"}</TD>
-                <TD className="font-mono text-xs">{r.version_before ?? "—"}</TD>
-                <TD className="font-mono text-xs">{r.version_after ?? "—"}</TD>
-                <TD>
-                  <Badge className={statusBadgeClass(r.status)}>{r.status}</Badge>
-                </TD>
-                <TD>
-                  <ErrorCell error={r.error} />
-                </TD>
-              </TR>
-            ))}
-            {rows.length === 0 && (
-              <TR>
-                <TD colSpan={9} className="text-center text-gray-500">
-                  조회 결과가 없습니다.
-                </TD>
-              </TR>
-            )}
-          </TBody>
-        </Table>
-
-        <div className="flex items-center justify-between text-sm text-gray-600">
-          <div>
-            총 {count.toLocaleString()}건 · {page}/{totalPages} 페이지
+        <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-4 py-3">
+          <div className="text-sm text-gray-600">
+            현재 시각{" "}
+            <LiveClock
+              initialIso={nowIso}
+              className="ml-2 font-mono text-gray-900"
+            />
           </div>
-          <div className="flex gap-2">
-            <Link
-              href={linkFor(Math.max(1, page - 1))}
-              className={`rounded-md border px-3 py-1 ${
-                page <= 1
-                  ? "pointer-events-none border-gray-200 text-gray-400"
-                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              이전
-            </Link>
-            <Link
-              href={linkFor(Math.min(totalPages, page + 1))}
-              className={`rounded-md border px-3 py-1 ${
-                page >= totalPages
-                  ? "pointer-events-none border-gray-200 text-gray-400"
-                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              다음
-            </Link>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>현재 track</span>
+            <Badge className={trackBadgeClass(track)}>{track}</Badge>
           </div>
+        </div>
+
+        <RecordsTemplateFilters packages={allPackageNames} />
+
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-600">
+            활성 단말 {result.devices.length}대 · 패키지 {result.rows.length}개
+          </div>
+          <a
+            href={`/api/export/records?${exportQuery.toString()}`}
+            className="rounded-md border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-800"
+          >
+            {track} .xlsx 다운로드
+          </a>
+        </div>
+
+        <div className="overflow-auto rounded-md border border-gray-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th rowSpan={2} className={firstMetaThClass}>
+                  App Name
+                </th>
+                <th rowSpan={2} className={metaThClass}>
+                  {isBeta ? "Package" : "Package Name"}
+                </th>
+                {isBeta && (
+                  <th rowSpan={2} className={metaThClass}>
+                    Opt-In
+                  </th>
+                )}
+                <th rowSpan={2} className={metaThClass}>
+                  Ref
+                </th>
+                <th rowSpan={2} className={metaThClass}>
+                  Latest version
+                </th>
+                <th rowSpan={2} className={metaThClass}>
+                  {isBeta ? "Last update" : "Last Update"}
+                </th>
+                {isBeta ? (
+                  <th rowSpan={2} className={metaThClass}>
+                    Age (days)
+                  </th>
+                ) : (
+                  <th rowSpan={2} className={metaThClass}>
+                    Rollout Status
+                  </th>
+                )}
+                {result.devices.map((d) => (
+                  <th
+                    key={d.id}
+                    colSpan={3}
+                    className="border-l border-gray-200 px-3 py-2 text-center font-semibold text-gray-800"
+                  >
+                    {d.model && d.model.trim() !== "" ? d.model : d.name}
+                  </th>
+                ))}
+              </tr>
+              {result.devices.length > 0 && (
+                <tr className="border-t border-gray-200 text-xs text-gray-500">
+                  {result.devices.map((d) => (
+                    <Fragment key={d.id}>
+                      <th className="border-l border-gray-200 px-3 py-1 text-left font-medium">
+                        이전버전
+                      </th>
+                      <th className="border-l border-gray-200 px-3 py-1 text-left font-medium">
+                        현재버전
+                      </th>
+                      <th className="border-l border-gray-200 px-3 py-1 text-left font-medium">
+                        상태
+                      </th>
+                    </Fragment>
+                  ))}
+                </tr>
+              )}
+            </thead>
+            <tbody>
+              {result.rows.map((r) => {
+                const p = r.package;
+                return (
+                  <tr key={p.id} className="border-t border-gray-200">
+                    <td className="sticky left-0 z-10 border-r border-gray-200 bg-white px-3 py-2 align-top">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">{p.app_name}</span>
+                        {changedPackages.has(p.package) && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-900">
+                            TEST
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="border-l border-gray-200 px-3 py-2 align-top font-mono text-xs">
+                      {p.package}
+                    </td>
+                    {isBeta && (
+                      <td className="border-l border-gray-200 px-3 py-2 align-top text-xs">
+                        {p.opt_in ?? "—"}
+                      </td>
+                    )}
+                    <td className="border-l border-gray-200 px-3 py-2 align-top font-mono text-xs">
+                      {p.ref ?? "—"}
+                    </td>
+                    <td className="border-l border-gray-200 px-3 py-2 align-top font-mono text-xs">
+                      {r.latest_version ?? "—"}
+                    </td>
+                    <td className="border-l border-gray-200 px-3 py-2 align-top text-xs">
+                      {r.last_update
+                        ? isBeta
+                          ? r.last_update.slice(0, 10)
+                          : r.last_update.slice(0, 16).replace("T", " ")
+                        : "—"}
+                    </td>
+                    {isBeta ? (
+                      <td className="border-l border-gray-200 px-3 py-2 align-top text-xs">
+                        {r.age_days ?? "—"}
+                      </td>
+                    ) : (
+                      <td className="border-l border-gray-200 px-3 py-2 align-top text-xs">
+                        {p.rollout_status ?? "—"}
+                      </td>
+                    )}
+                    {result.devices.map((d) => {
+                      const cell = r.per_device.get(d.name);
+                      // 현재 버전 — version_after 가 null 인 up_to_date 케이스는 version_before 가 현재값
+                      const curr = cell
+                        ? (cell.version_after ?? cell.version_before ?? null)
+                        : null;
+                      // 보고 윈도우 안에 (device, package) 가 변경됐는가 (Overview 와 동일 기준)
+                      const updated = changedCells.has(`${d.name}::${p.package}`);
+                      return (
+                        <Fragment key={d.id}>
+                          <td className="border-l border-gray-200 px-3 py-2 align-top font-mono text-xs">
+                            {cell?.version_before ?? "—"}
+                          </td>
+                          <td
+                            className={`border-l border-gray-200 px-3 py-2 align-top font-mono text-xs ${
+                              updated ? "bg-red-50" : ""
+                            }`}
+                          >
+                            {curr ? (
+                              <span
+                                className={
+                                  updated
+                                    ? "rounded bg-red-100 px-1 py-0.5 text-red-900"
+                                    : ""
+                                }
+                              >
+                                {curr}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="border-l border-gray-200 px-3 py-2 align-top">
+                            {cell?.status ? (
+                              <Badge className={statusBadgeClass(cell.status)}>
+                                {cell.status}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        </Fragment>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              {result.rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={(isBeta ? 7 : 6) + result.devices.length * 3}
+                    className="px-3 py-8 text-center text-sm text-gray-500"
+                  >
+                    조회 결과가 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </main>
     </>
