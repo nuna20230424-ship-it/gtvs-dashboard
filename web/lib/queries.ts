@@ -1,6 +1,7 @@
 // SQLite 데이터 접근 레이어 — 페이지/액션/(향후)API Route 가 공유하는 쿼리 함수
 import "server-only";
 import { db } from "@/lib/db";
+import { reportingWindowStartIso } from "@/lib/time";
 
 // =============================================================================
 // 타입 정의 (페이지/액션/필터 컴포넌트 공통 import)
@@ -13,6 +14,7 @@ export interface DeviceRow {
   ip: string;
   port: number;
   active: boolean;
+  model: string | null;
 }
 
 export interface PackageRow {
@@ -21,6 +23,8 @@ export interface PackageRow {
   app_name: string;
   ref: string;
   active: boolean;
+  opt_in: string | null;
+  rollout_status: string | null;
 }
 
 export interface UpdateRecordRow {
@@ -74,7 +78,7 @@ export interface Pagination {
 
 export type OverviewRow = Pick<
   UpdateRecordRow,
-  "device" | "package" | "version_after" | "status" | "checked_at"
+  "device" | "package" | "version_before" | "version_after" | "status" | "checked_at"
 >;
 
 // =============================================================================
@@ -87,7 +91,7 @@ type PackageDb = Omit<PackageRow, "active"> & { active: number };
 export function listActiveDevices(): DeviceRow[] {
   const rows = db
     .prepare(
-      "select id, name, track, ip, port, active from devices where active = 1 order by track, name"
+      "select id, name, track, ip, port, active, model from devices where active = 1 order by track, name"
     )
     .all() as DeviceDb[];
   return rows.map((r) => ({ ...r, active: !!r.active }));
@@ -96,7 +100,7 @@ export function listActiveDevices(): DeviceRow[] {
 export function listActivePackages(): PackageRow[] {
   const rows = db
     .prepare(
-      "select id, package, app_name, ref, active from packages where active = 1 order by package"
+      "select id, package, app_name, ref, active, opt_in, rollout_status from packages where active = 1 order by package"
     )
     .all() as PackageDb[];
   return rows.map((r) => ({ ...r, active: !!r.active }));
@@ -105,7 +109,7 @@ export function listActivePackages(): PackageRow[] {
 export function listAllDevices(): DeviceRow[] {
   const rows = db
     .prepare(
-      "select id, name, track, ip, port, active from devices order by track, name"
+      "select id, name, track, ip, port, active, model from devices order by track, name"
     )
     .all() as DeviceDb[];
   return rows.map((r) => ({ ...r, active: !!r.active }));
@@ -114,17 +118,10 @@ export function listAllDevices(): DeviceRow[] {
 export function listAllPackages(): PackageRow[] {
   const rows = db
     .prepare(
-      "select id, package, app_name, ref, active from packages order by package"
+      "select id, package, app_name, ref, active, opt_in, rollout_status from packages order by package"
     )
     .all() as PackageDb[];
   return rows.map((r) => ({ ...r, active: !!r.active }));
-}
-
-export function listDeviceNames(): string[] {
-  const rows = db
-    .prepare("select name from devices order by name")
-    .all() as Array<{ name: string }>;
-  return rows.map((r) => r.name);
 }
 
 export function listPackageNames(): string[] {
@@ -196,12 +193,44 @@ export function listRecords(
   return { rows, count: countRow.c };
 }
 
-export function listLatestRecordsForOverview(limit: number): OverviewRow[] {
+// (device, package) 별 최신 1건만 SQL 측에서 추려서 반환 — Overview / Export 양쪽 사용
+// 이전 구현: 최근 N건 가져와 JS Map 으로 dedup → 누적 데이터 늘수록 비례 비용
+// 신규 구현: window function 으로 단말×패키지 수만큼만 반환 (인덱스 idx_update_records_dev_pkg_time 활용)
+// limit 파라미터는 backward compat 위해 시그니처 유지 (현재는 무시)
+export function listLatestRecordsForOverview(_limit: number): OverviewRow[] {
+  void _limit;
   return db
     .prepare(
-      "select device, package, version_after, status, checked_at from update_records order by checked_at desc limit ?"
+      `select device, package, version_before, version_after, status, checked_at
+       from (
+         select device, package, version_before, version_after, status, checked_at,
+                row_number() over (partition by device, package order by checked_at desc) as rn
+         from update_records
+       )
+       where rn = 1`
     )
-    .all(limit) as OverviewRow[];
+    .all() as OverviewRow[];
+}
+
+// Overview 상단 배너용 — 모든 update_records 중 가장 최근 체크 시각
+export function getLastCheckedAt(): string | null {
+  const row = db
+    .prepare("select max(checked_at) as last from update_records")
+    .get() as { last: string | null } | undefined;
+  return row?.last ?? null;
+}
+
+// Export API용 — 페이지네이션 없이 필터 조건 만족하는 전체 records
+export function listAllRecords(filters: RecordsFilter): UpdateRecordRow[] {
+  const { sql, params } = recordsWhere(filters);
+  return db
+    .prepare(
+      `select id, device, track, package, ref, app_name, status, version_before, version_after, error, checked_at
+       from update_records
+       ${sql}
+       order by checked_at desc`
+    )
+    .all(params) as UpdateRecordRow[];
 }
 
 // =============================================================================
@@ -264,4 +293,56 @@ export function listHistory(
     .get(params) as { c: number };
 
   return { rows, count: countRow.c };
+}
+
+// History 초기화 버튼용 — 필터 무관 전체 행 수
+export function countAllHistory(): number {
+  const row = db
+    .prepare("select count(*) as c from version_history")
+    .get() as { c: number };
+  return row.c;
+}
+
+// 가장 최근 KST 09:00 이후 변경된 (device, package) pair 집합 — 등록 device·package 한정.
+// Overview/Records 셀 빨강 판정 + Tests `?only=today` 활성 셀 판정에 공통 사용.
+export function listChangedCellsSinceReport(): Set<string> {
+  const since = reportingWindowStartIso();
+  const rows = db
+    .prepare(
+      `select distinct device, package
+       from version_history
+       where changed_at >= @since
+         and device in (select name from devices where active = 1)
+         and package in (select package from packages where active = 1)`
+    )
+    .all({ since }) as Array<{ device: string; package: string }>;
+  return new Set(rows.map((r) => `${r.device}::${r.package}`));
+}
+
+// 같은 윈도우 안에 어느 단말이든 변경된 package 집합 — Overview/Records 의 'TEST' 뱃지용
+export function listChangedPackagesSinceReport(): Set<string> {
+  const since = reportingWindowStartIso();
+  const rows = db
+    .prepare(
+      `select distinct package
+       from version_history
+       where changed_at >= @since
+         and device in (select name from devices where active = 1)
+         and package in (select package from packages where active = 1)`
+    )
+    .all({ since }) as Array<{ package: string }>;
+  return new Set(rows.map((r) => r.package));
+}
+
+// Export API용 — 페이지네이션 없이 필터 조건 만족하는 전체 history
+export function listAllHistory(filters: HistoryFilter): VersionHistoryRow[] {
+  const { sql, params } = historyWhere(filters);
+  return db
+    .prepare(
+      `select id, device, track, package, app_name, version_before, version_after, source, changed_at
+       from version_history
+       ${sql}
+       order by changed_at desc`
+    )
+    .all(params) as VersionHistoryRow[];
 }

@@ -18,6 +18,11 @@ function createDb(): Database.Database {
   const conn = new Database(DB_PATH!, { fileMustExist: true });
   conn.pragma("journal_mode = WAL");
   conn.pragma("foreign_keys = ON");
+  // WAL 환경에서 안전한 성능 튜닝 — 매 트랜잭션 fsync 생략, 임시 객체 메모리, 페이지 캐시 64MB
+  conn.pragma("synchronous = NORMAL");
+  conn.pragma("temp_store = MEMORY");
+  conn.pragma("cache_size = -64000");
+  conn.pragma("mmap_size = 268435456"); // 256MB — 읽기 우선 워크로드에서 효과적
   return conn;
 }
 
