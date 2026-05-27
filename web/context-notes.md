@@ -307,3 +307,80 @@ Register-ScheduledTask -TaskName 'GTVS Dashboard' -Action $action -Trigger $trig
 - LAN 내부 (172.30.1.x) 의 노트북만 `http://172.30.1.44:3000` 으로 접속.
 - 외부 노트북·휴대전화에서 접속할 수단 없음. 외출 중 확인 불가.
 - 보안 측면 안정 (회사 LAN 격리 + NextAuth + Firewall Domain+Private 만 허용).
+
+## LAN 접속 진단 — 오진단 경위 & 방화벽 비활성 경고 (2026-05-22)
+
+### 증상
+- 다른 노트북에서 `http://172.30.1.44:3000` 접속 안 됨 보고.
+- 본 PC: 서버 `0.0.0.0:3000` + `[::]:3000` 둘 다 LISTEN 정상.
+
+### 1차 오진단 (잘못된 결론)
+- 표면 관찰: NetworkCategory=`Public` (KT_GiGA_5G_BC66), 방화벽 규칙 `GTVS Dashboard 3000` Profile=`Domain, Private`.
+- "Profile 불일치로 Public 인바운드 차단됨" 으로 단정 → Private 전환 vs Public 추가 옵션 사용자에게 제시.
+- **실수**: 프로파일 자체의 Enabled 상태를 확인하지 않고 규칙의 Profile 컬럼만 보고 결론. 사용자 응답 전에 추가 검증 안 함.
+
+### 실제 상태
+```
+Name    Enabled DefaultInboundAction
+Domain    False NotConfigured
+Private   False NotConfigured
+Public    False NotConfigured
+```
+- Windows Defender Firewall 3개 프로파일 **전부 비활성**. 모든 inbound 가 무방비 통과.
+- 즉 NetworkCategory 가 Public 이어도, 규칙 Profile 이 Domain/Private 이어도 무관하게 3000 이 열림.
+- 사용자가 별도 조치 없이 "정상 접속 확인" 한 이유는 이것. 처음에 안 됐던 건 다른 원인(상대 노트북, 일시적 네트워크 문제) 가능성.
+
+### 진단 교훈
+- 방화벽 차단 가설 검증 순서: ① `Get-NetFirewallProfile` 로 프로파일 Enabled 확인 → ② 그 다음에 규칙 Profile 매칭 점검. 1단계 건너뛰면 오진단.
+
+### 시한폭탄 경고
+- 현 시점 방화벽 OFF 라 LAN 노출 = 회사 LAN 전체. NextAuth 미인증 요청은 로그인 페이지로 리다이렉트되지만 `/api/*` 의 일부 라우트가 unauthenticated probe 에 어떻게 반응하는지 별도 확인 필요.
+- 회사 GPO 가 방화벽을 다시 켜는 시점에 `GTVS Dashboard 3000` 규칙(Profile=Domain,Private) + NetworkCategory=Public 조합으로 즉시 차단 재발. 그때 옵션 2가지:
+  - (A) `Set-NetConnectionProfile -InterfaceAlias '이더넷 3' -NetworkCategory Private` — KT 공유기 네트워크에 한정. 외부망 자동 이동 시 Public 으로 돌아갈 수 있음.
+  - (B) `Set-NetFirewallRule -DisplayName 'GTVS Dashboard 3000' -Profile Domain,Private,Public` — 어떤 네트워크에서도 3000 inbound 허용. 카페·공항 와이파이에서도 열리는 부작용.
+- 어느 쪽이든 사용자 결정 사안. 지금은 방화벽 자체가 꺼져 있어 시급도 낮음.
+
+### 확인 명령 (재발 시)
+```powershell
+Get-NetFirewallProfile | Select Name, Enabled
+Get-NetConnectionProfile | Select InterfaceAlias, NetworkCategory
+Get-NetFirewallRule -DisplayName 'GTVS Dashboard 3000' | Select Profile, Enabled
+netstat -an | findstr :3000
+```
+
+## 10차 작업 — Records "이전버전" 오표시 버그 (2026-05-22)
+
+### 증상
+- Records 페이지에서 단말 셀의 "이전버전" 컬럼이 "현재버전" 과 동일한 값을 표시.
+- 예) STB-02/com.android.vending(production): 두 셀 모두 `51.4.17-24 [8] [PR] 912813423` (현재 설치 버전) — 실제 직전 버전 `51.2.17-24...` 는 어디에도 안 보임.
+
+### Root cause — update_records.version_before 의 의미 이중성
+- Python updater 는 status 에 따라 같은 컬럼에 다른 의미를 적재.
+  - `status='updated'` row: version_before = 업데이트 직전 버전, version_after = 새 버전
+  - `status='up_to_date'` / `'error'` row: version_before = **현재 설치 버전**, version_after = null
+- 즉 어떤 단말이 한 번이라도 업데이트된 뒤 다시 체크되면 (가장 흔한 케이스) 가장 최근 update_records 의 version_before 가 "현재 버전" 을 가리킴.
+- 기존 코드는 "이전버전" 칸에 `cell.version_before` 를 그대로 꽂아 둠 → 그 결과 현재 버전이 "이전" 으로 표시.
+
+### 수정 — PerDeviceCell 재설계
+- `lib/template.ts` 의 `PerDeviceCell` 을 의미 기준으로 교체.
+  - `previous_version`: `version_history` 의 가장 최근 (device, package, track) row 의 `version_before` — 진짜 직전 버전.
+  - `current_version`: `update_records` 최신 record 의 `version_after ?? version_before` — 현재 설치 버전 (status 무관).
+  - `status`: 그대로.
+- 결과적으로 fallback 로직 (`version_after ?? version_before`) 이 template 안에 한 번만 살아남고, page/exporter 의 호출처는 단순한 필드 접근만.
+- 한 번도 업데이트된 적 없는 단말×패키지는 version_history row 가 없어 `previous_version=null` → UI 에서 `"—"`. xlsx 도 빈 셀.
+
+### 영향 범위
+- `app/(app)/records/page.tsx`: `cell.version_before` / `cell.version_after` 접근 → `cell.previous_version` / `cell.current_version`.
+- `lib/exporters.ts` (`templateToXlsx`): 같은 교체. xlsx 의 `... 이전버전` 컬럼도 자동으로 같이 고쳐짐.
+- Overview/Tests/History: `PerDeviceCell` 미사용. 영향 없음.
+
+### 검증 (DB 직접 비교)
+| device / package / track | 이전버전 | 현재버전 |
+|---|---|---|
+| STB-02 / com.android.vending / production | `51.2.17-24 [8] [PR] 905209615` | `51.4.17-24 [8] [PR] 912813423` |
+| STB-01 / com.google.android.webview / beta | `149.0.7827.22` | `140.0.7339.207` (manual 다운그레이드) |
+| STB-01 / com.android.vending / beta | `51.2.17-31 [8] [PR] 905209615` | `51.4.17-31 [8] [PR] 912813423` |
+
+### 사이드 노트
+- 이 버그는 6차 작업의 "현재버전 셀 빨강" 도입 시점에는 잠재돼 있었음. 그땐 빨강 판정만 신경 썼고 컬럼 표시 자체에는 손을 안 댔음. 8차에서 빨강 판정 입력을 `version_history` 로 옮긴 직후 시각적으로 더 도드라져 발견됨.
+- Python updater 측 schema 자체를 손대지 않는 게 원칙. 의미 모호한 컬럼은 대시보드 측에서 해소.

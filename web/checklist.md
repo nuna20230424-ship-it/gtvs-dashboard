@@ -194,3 +194,17 @@
 
 기 작성 산출물:
 - `scripts/check-tunnel.ps1` — Tunnel 점검 helper. 9차 진행 안 하므로 orphan. 사용자 의견 따라 보존/삭제 결정.
+
+## 추가 요청 (2026-05-22 10차) — Records "이전버전" 오표시 버그 수정
+
+### GG. PerDeviceCell 시그니처 교체
+- [x] `lib/template.ts` — `PerDeviceCell` 을 `{previous_version, current_version, status}` 로 재구성. previous_version 은 `version_history` 의 최신 row.version_before, current_version 은 `update_records` 최신 record 의 `version_after ?? version_before`. status 는 그대로.
+
+### HH. 호출처 갱신
+- [x] `app/(app)/records/page.tsx` — 셀 필드 접근을 `previous_version` / `current_version` 으로 교체. `version_after ?? version_before` fallback 로직 제거 (template 안으로 이전).
+- [x] `lib/exporters.ts` — 동일 갱신. xlsx 의 "이전버전" 컬럼도 같이 고쳐짐.
+
+### II. 검증
+- [x] `npm run build` 통과 (17 라우트 동일)
+- [x] DB 3개 케이스 직접 비교 — STB-02/vending(production), STB-01/webview·vending(beta) 모두 "이전버전 ≠ 현재버전" 으로 정확히 분리.
+- [ ] 사용자 dev 서버 UI 재확인

@@ -197,23 +197,19 @@ export default async function RecordsPage({
                     )}
                     {result.devices.map((d) => {
                       const cell = r.per_device.get(d.name);
-                      // 현재 버전 — version_after 가 null 인 up_to_date 케이스는 version_before 가 현재값
-                      const curr = cell
-                        ? (cell.version_after ?? cell.version_before ?? null)
-                        : null;
                       // 보고 윈도우 안에 (device, package) 가 변경됐는가 (Overview 와 동일 기준)
                       const updated = changedCells.has(`${d.name}::${p.package}`);
                       return (
                         <Fragment key={d.id}>
                           <td className="border-l border-gray-200 px-3 py-2 align-top font-mono text-xs">
-                            {cell?.version_before ?? "—"}
+                            {cell?.previous_version ?? "—"}
                           </td>
                           <td
                             className={`border-l border-gray-200 px-3 py-2 align-top font-mono text-xs ${
                               updated ? "bg-red-50" : ""
                             }`}
                           >
-                            {curr ? (
+                            {cell?.current_version ? (
                               <span
                                 className={
                                   updated
@@ -221,7 +217,7 @@ export default async function RecordsPage({
                                     : ""
                                 }
                               >
-                                {curr}
+                                {cell.current_version}
                               </span>
                             ) : (
                               "—"

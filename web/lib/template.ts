@@ -6,8 +6,11 @@ import type { DeviceRow, PackageRow } from "@/lib/queries";
 export type TemplateTrack = "beta" | "production";
 
 export interface PerDeviceCell {
-  version_before: string | null;
-  version_after: string | null;
+  // 직전 업데이트 이벤트의 version_before (version_history 기반).
+  // update_records.version_before 는 status=up_to_date 시 '현재 버전' 을 가리키므로
+  // "이전버전" 컬럼에 그대로 쓰면 안 됨 — 항상 version_history 의 값을 사용.
+  previous_version: string | null;
+  current_version: string | null;
   status: string | null;
 }
 
@@ -79,11 +82,18 @@ export function buildTemplate(
      order by changed_at desc limit 1`
   );
 
-  // 단말×패키지별 최신 1건 (record)
+  // 단말×패키지별 최신 1건 — 현재 버전·상태용
   const perDeviceStmt = db.prepare(
     `select version_before, version_after, status from update_records
      where device = ? and package = ? and track = ?
      order by checked_at desc limit 1`
+  );
+
+  // 단말×패키지별 가장 최근 업데이트 이벤트의 version_before — "이전버전" 정답값
+  const previousVersionStmt = db.prepare(
+    `select version_before from version_history
+     where device = ? and package = ? and track = ?
+     order by changed_at desc limit 1`
   );
 
   const now = Date.now();
@@ -106,13 +116,18 @@ export function buildTemplate(
 
     const per_device = new Map<string, PerDeviceCell>();
     for (const d of devicesTyped) {
-      const cell = perDeviceStmt.get(d.name, p.package, track) as
-        | PerDeviceCell
+      const rec = perDeviceStmt.get(d.name, p.package, track) as
+        | { version_before: string | null; version_after: string | null; status: string | null }
         | undefined;
-      per_device.set(d.name, cell ?? {
-        version_before: null,
-        version_after: null,
-        status: null,
+      const prev = previousVersionStmt.get(d.name, p.package, track) as
+        | { version_before: string | null }
+        | undefined;
+      // 현재 버전 — status=up_to_date 일 땐 version_after=null 이라 version_before 가 현재값
+      const current_version = rec ? (rec.version_after ?? rec.version_before) : null;
+      per_device.set(d.name, {
+        previous_version: prev?.version_before ?? null,
+        current_version,
+        status: rec?.status ?? null,
       });
     }
 

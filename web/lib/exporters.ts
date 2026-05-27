@@ -145,10 +145,9 @@ export async function templateToXlsx(t: TemplateResult): Promise<Uint8Array> {
     const deviceCells: (string | number)[] = [];
     for (const d of t.devices) {
       const cell = r.per_device.get(d.name);
-      const curr = cell ? (cell.version_after ?? cell.version_before ?? "") : "";
       deviceCells.push(
-        cell?.version_before ?? "",
-        curr,
+        cell?.previous_version ?? "",
+        cell?.current_version ?? "",
         cell?.status ?? ""
       );
     }
