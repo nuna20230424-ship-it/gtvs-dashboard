@@ -177,10 +177,8 @@ Tailscale 설치 자체가 보안 이슈로 판단되어 폐기. `context-notes.
 - [ ] **사용자 작업**: GEMINI_API_KEY 입력 + 빌드/재시작 후 채팅 검증
 
 ### P6 — Python reporter 이메일에 Gemini 요약 (D)
-- [x] `reporter.py` — `_build_ai_summary(records)` 추가, `urllib` 표준 라이브러리 (외부 의존성 0)
-- [x] `email_template.html` — `{{AI_SUMMARY}}` placeholder 추가 (헤더 다음, 트랙 섹션 위)
-- [x] 안전 — 키 없거나 호출 실패 시 빈 문자열 → AI 박스 미표시 (기존 메일은 그대로 발송)
-- [ ] **사용자 작업**: `KVAM-v0.5.4.5-fix/.env` 에 `GEMINI_API_KEY=<키>` 추가 후 다음 사이클에서 메일 확인
+- [x] 2026-05-29 — 추가 완료(`a3dd95c`) → **2026-05-29 저녁 제거** (C 결정, 나중에 다시 활성화 예정)
+- 복원 가이드 — `context-notes.md` 2026-05-29(저녁) 섹션 참조
 
 ---
 

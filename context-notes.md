@@ -166,3 +166,30 @@
 ### 우선순위
 - 외부 노출(P1) 먼저 — Gemini는 그 다음. 외부 접속이 안 되면 Gemini를 붙여도 본인만 쓰는 상황이 변하지 않음.
 - 한 번에 다 만들지 않고 P0→P1→…→P6 단계로 분할. 각 단계마다 검증 후 다음으로.
+
+## 2026-05-29 (저녁) — Gemini 연동 단계별 결정
+
+### 1차 — P3/P4/P5 대시보드 측 제거 (B 결정)
+- 사용자 검토 결과 운영 이점이 명확한 건 P6(이메일 AI 요약) 뿐. 나머지(Overview 카드/History AI 코멘트/AI Chat) 는 화면을 직접 보는 게 더 정확하다고 판단.
+- 회사망 외부 HTTPS 차단 + 무료 티어가 데이터 학습 사용 → 보안 부담도 높음.
+- **제거 완료** — `web/lib/gemini.ts`, `web/app/actions/{ai-comment,chat}.ts`, `web/app/(app)/overview-summary-card.tsx`, `web/app/(app)/chat/`, `web/app/(app)/history/history-table.tsx`, DB 테이블 `gemini_cache`(마이그레이션 008), sidebar `/chat` 메뉴. dashboard 측 GEMINI_API_KEY 도 `.env.local` 에서 제거.
+
+### 2차 — P6 (이메일 AI 요약) 도 제거 (C 결정)
+- 1차 후 P6 만 남아있었음. 사용자가 "나중에 추가하는 걸로" 결정 — 운영하면서 필요성이 명확해진 시점에 다시 붙이기로.
+- **제거 완료** — `gtvs_updater/reporter.py` 에서 `_call_gemini` / `_build_ai_summary` 제거, `build_email_html` 에서 `{{AI_SUMMARY}}` 치환 제거. `email_template.html` 에서 placeholder 라인 제거. import 정리(`json`, `os`, `urllib.*` 삭제).
+
+### 복원 가이드 (향후 P6 다시 활성화)
+- 정확한 코드는 qa-automation commit `a3dd95c` 의 `gtvs_updater/reporter.py` + `email_template.html` 변경분에 있음.
+- 명령 예시
+  ```bash
+  cd qa-automation
+  git show a3dd95c -- gtvs_updater/reporter.py
+  git show a3dd95c -- gtvs_updater/email_template.html
+  ```
+- 적용 방법 — 위 두 파일 변경분을 cherry-pick 또는 수동 복원. KVAM-v0.5.4.5-fix/.env 에 `GEMINI_API_KEY=<키>` 추가하면 다음 `run_check` 사이클에서 이메일 헤더에 200자 AI 요약 박스 자동 표시.
+- 회사 보안 — Pay-as-you-go 결제 등록 시 학습 사용 X. 호출당 비용 매우 작음 (1회당 수 원 미만). 외부 도메인 화이트리스트 — `generativelanguage.googleapis.com`.
+
+### 다시 추가할 만한 조건
+- 외부망 접근이 정상화됐을 때 (현재 회사망 외부 HTTPS 차단 상태)
+- 이메일 표만으로 모바일에서 핵심 파악이 어려워질 때 (패키지/단말 수 늘어남)
+- 보안팀의 외부 API 사용 승인
