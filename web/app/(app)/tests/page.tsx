@@ -1,4 +1,4 @@
-// 자동화 테스트 트리거 페이지 — 단말×패키지 그리드. ?only=today 로 TEST 대상만 활성
+// 자동화 테스트 트리거 페이지 — 단말×패키지 그리드. 셀 클릭 시 자동 결과 + 수동 체크박스 펼침
 import Link from "next/link";
 import { auth } from "@/auth";
 import { Header } from "@/components/header";
@@ -7,13 +7,18 @@ import {
   listActiveDevices,
   listActivePackages,
   listChangedCellsSinceReport,
+  listLatestTestRuns,
+  listLatestManualChecks,
 } from "@/lib/queries";
+import { loadAllSpecs } from "@/lib/scenarios";
 import { reportingWindowStartIso } from "@/lib/time";
 import { formatDateTime } from "@/lib/format";
 
 interface SearchParams {
   only?: string;
 }
+
+export const dynamic = "force-dynamic";
 
 export default async function TestsPage({
   searchParams,
@@ -26,6 +31,22 @@ export default async function TestsPage({
   const changedCells = listChangedCellsSinceReport();
   const windowStart = reportingWindowStartIso();
   const onlyToday = searchParams.only === "today";
+
+  // 시나리오 spec (yaml) — 자동/수동 step id 목록
+  const specMap = loadAllSpecs();
+  const specs = packages.map((p) => {
+    const s = specMap.get(p.package);
+    return {
+      package: p.package,
+      ref: s?.ref ?? p.ref,
+      auto_steps: s?.auto_steps ?? [],
+      manual_checks: s?.manual_checks ?? [],
+    };
+  });
+
+  // 최근 결과 — 셀별 매핑은 client 측에서 처리
+  const testRuns = listLatestTestRuns();
+  const manualChecks = listLatestManualChecks();
 
   return (
     <>
@@ -64,7 +85,12 @@ export default async function TestsPage({
           packages={packages.map((p) => ({
             package: p.package,
             app_name: p.app_name,
+            ref: p.ref,
+            test_supported: p.test_supported,
           }))}
+          specs={specs}
+          testRuns={testRuns}
+          manualChecks={manualChecks}
           changedKeys={[...changedCells]}
           onlyToday={onlyToday}
         />

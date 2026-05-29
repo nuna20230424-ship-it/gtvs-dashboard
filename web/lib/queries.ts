@@ -25,6 +25,7 @@ export interface PackageRow {
   active: boolean;
   opt_in: string | null;
   rollout_status: string | null;
+  test_supported: boolean; // 0 = N/A (시나리오 미정의 또는 KT 단말 미지원)
 }
 
 export interface UpdateRecordRow {
@@ -86,7 +87,14 @@ export type OverviewRow = Pick<
 // =============================================================================
 
 type DeviceDb = Omit<DeviceRow, "active"> & { active: number };
-type PackageDb = Omit<PackageRow, "active"> & { active: number };
+type PackageDb = Omit<PackageRow, "active" | "test_supported"> & {
+  active: number;
+  test_supported: number;
+};
+
+function toPackageRow(r: PackageDb): PackageRow {
+  return { ...r, active: !!r.active, test_supported: !!r.test_supported };
+}
 
 export function listActiveDevices(): DeviceRow[] {
   const rows = db
@@ -100,10 +108,10 @@ export function listActiveDevices(): DeviceRow[] {
 export function listActivePackages(): PackageRow[] {
   const rows = db
     .prepare(
-      "select id, package, app_name, ref, active, opt_in, rollout_status from packages where active = 1 order by package"
+      "select id, package, app_name, ref, active, opt_in, rollout_status, test_supported from packages where active = 1 order by package"
     )
     .all() as PackageDb[];
-  return rows.map((r) => ({ ...r, active: !!r.active }));
+  return rows.map(toPackageRow);
 }
 
 export function listAllDevices(): DeviceRow[] {
@@ -118,10 +126,10 @@ export function listAllDevices(): DeviceRow[] {
 export function listAllPackages(): PackageRow[] {
   const rows = db
     .prepare(
-      "select id, package, app_name, ref, active, opt_in, rollout_status from packages order by package"
+      "select id, package, app_name, ref, active, opt_in, rollout_status, test_supported from packages order by package"
     )
     .all() as PackageDb[];
-  return rows.map((r) => ({ ...r, active: !!r.active }));
+  return rows.map(toPackageRow);
 }
 
 export function listPackageNames(): string[] {
@@ -332,6 +340,66 @@ export function listChangedPackagesSinceReport(): Set<string> {
     )
     .all({ since }) as Array<{ package: string }>;
   return new Set(rows.map((r) => r.package));
+}
+
+// =============================================================================
+// test_runs / manual_checks (Tests 페이지)
+// =============================================================================
+
+export interface TestRunLatest {
+  device: string;
+  package: string;
+  scenario_id: string;
+  result: string; // 'pass' | 'fail' | 'error' | 'skipped'
+  reason: string | null;
+  started_at: string;
+  finished_at: string | null;
+  log_excerpt: string | null;
+  triggered_by: string;
+}
+
+export interface ManualCheckLatest {
+  device: string;
+  package: string;
+  check_id: string;
+  result: string; // 'pass' | 'fail' | 'skip'
+  checker: string | null;
+  checked_at: string;
+  note: string | null;
+}
+
+// 활성 device × 활성 package 한정 — (device, package, scenario_id)별 최신 1건
+export function listLatestTestRuns(): TestRunLatest[] {
+  return db
+    .prepare(
+      `select device, package, scenario_id, result, reason, started_at, finished_at, log_excerpt, triggered_by
+       from (
+         select device, package, scenario_id, result, reason, started_at, finished_at, log_excerpt, triggered_by,
+                row_number() over (partition by device, package, scenario_id order by started_at desc) rn
+         from test_runs
+         where device in (select name from devices where active = 1)
+           and package in (select package from packages where active = 1)
+       )
+       where rn = 1`
+    )
+    .all() as TestRunLatest[];
+}
+
+// 활성 device × 활성 package 한정 — (device, package, check_id)별 최신 1건
+export function listLatestManualChecks(): ManualCheckLatest[] {
+  return db
+    .prepare(
+      `select device, package, check_id, result, checker, checked_at, note
+       from (
+         select device, package, check_id, result, checker, checked_at, note,
+                row_number() over (partition by device, package, check_id order by checked_at desc) rn
+         from manual_checks
+         where device in (select name from devices where active = 1)
+           and package in (select package from packages where active = 1)
+       )
+       where rn = 1`
+    )
+    .all() as ManualCheckLatest[];
 }
 
 // Export API용 — 페이지네이션 없이 필터 조건 만족하는 전체 history
