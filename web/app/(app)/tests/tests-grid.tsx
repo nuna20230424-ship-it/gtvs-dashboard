@@ -22,6 +22,9 @@ interface Package {
 interface SpecStep {
   id: string;
   desc: string;
+  procedure?: string;
+  expected?: string;
+  note?: string;
   risky?: boolean;
 }
 interface Spec {
@@ -350,7 +353,7 @@ export function TestsGrid({
                   {sel.spec.auto_steps.map((step) => {
                     const r = sel.runs.find((x) => x.scenario_id === step.id);
                     return (
-                      <tr key={step.id} className="border-t border-gray-100">
+                      <tr key={step.id} className="border-t border-gray-100 align-top">
                         <td className="px-2 py-1 font-mono text-[11px]">
                           {step.id}
                           {step.risky && (
@@ -359,7 +362,27 @@ export function TestsGrid({
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-1 text-gray-700">{step.desc}</td>
+                        <td className="px-2 py-1 text-gray-700 max-w-md">
+                          <div className="font-medium">{step.desc}</div>
+                          {step.procedure && (
+                            <div className="mt-1 whitespace-pre-line text-[11px] text-gray-600">
+                              <span className="text-gray-400">시나리오 </span>
+                              {step.procedure}
+                            </div>
+                          )}
+                          {step.expected && (
+                            <div className="mt-1 whitespace-pre-line text-[11px] text-emerald-700">
+                              <span className="text-emerald-500">기대결과 </span>
+                              {step.expected}
+                            </div>
+                          )}
+                          {step.note && (
+                            <div className="mt-1 text-[11px] text-amber-700">
+                              <span className="text-amber-500">비고 </span>
+                              {step.note}
+                            </div>
+                          )}
+                        </td>
                         <td className={`px-2 py-1 ${stepResultStyle(r?.result)}`}>
                           {r?.result ?? "—"}
                         </td>
@@ -396,9 +419,27 @@ export function TestsGrid({
                         <div className="font-mono text-[11px] text-gray-500">
                           {m.id}
                         </div>
-                        <div className="text-xs text-gray-800">{m.desc}</div>
+                        <div className="text-xs font-medium text-gray-800">{m.desc}</div>
+                        {m.procedure && (
+                          <div className="mt-1 whitespace-pre-line text-[11px] text-gray-600">
+                            <span className="text-gray-400">시나리오 </span>
+                            {m.procedure}
+                          </div>
+                        )}
+                        {m.expected && (
+                          <div className="mt-1 whitespace-pre-line text-[11px] text-emerald-700">
+                            <span className="text-emerald-500">기대결과 </span>
+                            {m.expected}
+                          </div>
+                        )}
+                        {m.note && (
+                          <div className="mt-1 text-[11px] text-amber-700">
+                            <span className="text-amber-500">비고 </span>
+                            {m.note}
+                          </div>
+                        )}
                         {c && (
-                          <div className="mt-1 text-[11px] text-gray-500">
+                          <div className="mt-2 text-[11px] text-gray-500">
                             최근 — <span className={stepResultStyle(c.result)}>{c.result}</span>{" "}
                             · {c.checker ?? "?"} · {fmt(c.checked_at)}
                             {c.note && <span> · {c.note}</span>}

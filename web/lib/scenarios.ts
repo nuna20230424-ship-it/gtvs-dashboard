@@ -7,6 +7,9 @@ import yaml from "js-yaml";
 export interface ScenarioStep {
   id: string;
   desc: string;
+  procedure?: string; // 엑셀 '시나리오 (동작)' — 검증자가 보는 단계별 동작
+  expected?: string;  // 엑셀 '기대결과값'
+  note?: string;      // 엑셀 '비고'
   risky?: boolean;
 }
 
@@ -66,11 +69,17 @@ export function loadAllSpecs(): Map<string, ScenarioSpec> {
         auto_steps: (doc.auto_steps ?? []).map((s) => ({
           id: s.id,
           desc: s.desc ?? "",
+          procedure: s.procedure,
+          expected: s.expected,
+          note: s.note,
           risky: !!s.risky,
         })),
         manual_checks: (doc.manual_checks ?? []).map((s) => ({
           id: s.id,
           desc: s.desc ?? "",
+          procedure: s.procedure,
+          expected: s.expected,
+          note: s.note,
         })),
       });
     } catch {
