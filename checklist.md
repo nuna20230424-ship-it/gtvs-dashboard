@@ -118,3 +118,111 @@ Tailscale 설치 자체가 보안 이슈로 판단되어 폐기. `context-notes.
 - [ ] **사용자 작업**: `npm run dev` → 로그인 → Overview/Records/History 에 더미 데이터 표시 확인
 - [ ] **사용자 작업**: `patch_main.md` 따라 `gtvs_updater/main.py` 실제 패치 + 1사이클 실행 → 대시보드 실 데이터 표시 확인
 - [ ] **사용자 작업**: 검증 후 더미 데이터 정리 (`STB-DRY-*` row 삭제)
+
+---
+
+## 외부 노출 + Gemini AI 연동 (2026-05-28 결정 — Quick Tunnel + Gemini 무료 티어)
+
+`context-notes.md` 2026-05-28 섹션 참조. 도메인 없이 `*.trycloudflare.com` 임시 URL로 시작, 필요 시 Named Tunnel로 전환. Gemini API는 무료 티어(2.5 Flash/Flash-Lite)로 운영.
+
+### P0 — 결정 정리 + 문서 갱신
+- [x] `context-notes.md` 2026-05-28 섹션 추가 (Gemini 오해 정리 + cloudflared 선택 이유)
+- [x] `checklist.md` 본 섹션 추가
+
+### P1 — Cloudflare Quick Tunnel
+- [ ] cloudflared 설치 (winget `Cloudflare.cloudflared`)
+- [ ] `cloudflared tunnel --url http://localhost:3000` 1회 수동 기동 → 발급 URL로 다른 네트워크에서 접속 검증
+- [ ] `web/scripts/start-tunnel.bat` + `start-tunnel.vbs` 신규 — hidden 백그라운드 기동, `.runlogs/tunnel.log`에 적재
+- [ ] `.runlogs/tunnel-url.txt`에 매 기동 시 발급 URL 자동 기록 (로그 파서)
+- [ ] Task Scheduler 작업 "GTVS Tunnel" 등록 — 로그온 시 자동 기동
+- [ ] **사용자 작업**: 외부 노트북에서 `tunnel-url.txt`의 URL로 접속 + NextAuth 로그인 동작 확인
+
+### P2 — Gemini 공통 클라이언트
+- [x] `.env.local`에 `GEMINI_API_KEY=` 자리 추가 — **사용자 작업**: https://aistudio.google.com/apikey 에서 발급 후 값 입력
+- [x] `lib/gemini.ts` 신규 — fetch 기반 Gemini 2.5 Flash 호출 래퍼 + SHA-256 캐시
+- [x] 호출 결과를 `gemini_cache` 테이블에 (input_hash, model, output, created_at) 캐시 — 무료 한도 보호
+- [x] 마이그레이션 `005_gemini_cache.sql` 작성 + 적용 (gtvs.db에 테이블/인덱스 생성 확인)
+- [x] `npx tsc --noEmit` 0 errors
+
+### P3 — Overview 요약 카드 (A)
+- [x] `lib/queries.ts`에 `getOverviewSnapshotForLlm()` 추가 — 변경 100건/오류 50건 한도로 LLM 입력 생성
+- [x] `app/(app)/overview-summary-card.tsx` 신규 — Server Component, Gemini 호출 + 안전 폴백(키 미설정/0건/오류)
+- [x] `app/(app)/page.tsx` 상단에 `<Suspense>` 감싼 `<OverviewSummaryCard>` 삽입 — 페이지 본문은 먼저 렌더, 카드는 뒤따라 채움
+- [x] 캐시 키 — `lib/gemini.ts`의 SHA-256(model + prompt). 같은 스냅샷이면 재호출 X
+- [x] `npx tsc --noEmit` 0 errors
+- [ ] **사용자 작업**: `.env.local`에 GEMINI_API_KEY 입력 후 빌드+재시작 → 실제 응답 확인
+
+### P4 — 에러/manual 이력 AI 코멘트 (C)
+- [ ] Records/History 행에 "AI 코멘트" 버튼 — 클릭 시 server action으로 Gemini 호출
+- [ ] `status=error` 또는 `source=manual` 행에만 노출
+- [ ] 결과는 행 펼침 영역에 표시 + 캐시
+
+### P5 — 자연어 질의 챗봇 패널 (B)
+- [ ] 좌측 사이드바 하단에 챗봇 토글 버튼
+- [ ] 사전 정의 인텐트 → SQL 매핑(LLM이 임의 SQL 생성하지 않도록 안전 가드)
+- [ ] 응답 스트리밍 (Gemini SSE 또는 chunk fetch)
+
+### P4 — Records/History 행 AI 코멘트 (C)
+- [x] `app/actions/ai-comment.ts` — `commentOnHistory(id)` / `commentOnRecord(id)` server actions
+- [x] `app/(app)/history/history-table.tsx` 신규 — source='manual' 행에 AI 분석 버튼 + 펼침 영역
+- [x] `tsc --noEmit` 0 errors
+- [ ] **사용자 작업**: GEMINI_API_KEY 입력 + 빌드/재시작 후 manual 행에서 동작 확인
+- [ ] Records의 error cell에도 AI 분석 적용 (현재는 server action만, UI 후속)
+
+### P5 — 자연어 질의 챗봇 (B)
+- [x] `app/actions/chat.ts` — `askChat(history)` server action (보고 윈도우 데이터 + 대화 히스토리)
+- [x] `app/(app)/chat/page.tsx` + `chat-ui.tsx` — 메시지 누적 + 전송 UI
+- [x] 사이드바에 `/chat` 메뉴 추가 (Sparkles icon)
+- [x] 안전 — LLM 에 SQL 생성 권한 없음. 보고 윈도우 데이터만 입력
+- [ ] **사용자 작업**: GEMINI_API_KEY 입력 + 빌드/재시작 후 채팅 검증
+
+### P6 — Python reporter 이메일에 Gemini 요약 (D)
+- [x] `reporter.py` — `_build_ai_summary(records)` 추가, `urllib` 표준 라이브러리 (외부 의존성 0)
+- [x] `email_template.html` — `{{AI_SUMMARY}}` placeholder 추가 (헤더 다음, 트랙 섹션 위)
+- [x] 안전 — 키 없거나 호출 실패 시 빈 문자열 → AI 박스 미표시 (기존 메일은 그대로 발송)
+- [ ] **사용자 작업**: `KVAM-v0.5.4.5-fix/.env` 에 `GEMINI_API_KEY=<키>` 추가 후 다음 사이클에서 메일 확인
+
+---
+
+## 시나리오 자동 테스트 시스템 (2026-05-29 — PT1~PT7 진행 중)
+
+상세 단계별 진행은 `context-notes.md` 2026-05-29 섹션 참조.
+
+### PT1 — 마이그레이션 006/007
+- [x] `006_test_runs.sql` — test_runs / manual_checks 테이블 + packages.test_supported
+- [x] `007_na_kt_launcher.sql` — TV Launcher / Google TV Home N/A 마킹 (양쪽 단말 KT)
+- [x] gtvs.db 적용 확인 (N/A 6개)
+
+### PT2 — 시나리오 YAML (12개 패키지)
+- [x] Katniss / SetupWraith / GmsCore / MediaShell / WebViewGoogle / talkback / TvCoreServices / RemoteService / Backdrop / YouTube / LatinImeGoogle / PlayStore
+- [x] 자동 step 41건 + 수동 점검 50건 (Katniss Phase A 음성 검색 추가 후 +1 자동)
+
+### PT3 — `scenario_runner.py` (Python)
+- [x] yaml 로드 + step dispatcher + assertion + sqlite test_runs INSERT
+- [x] step 18종 (Phase A 신규 3종 포함) + assertion 16종 (Phase A 3종 포함)
+- [x] CLI — `--device / --device-name / --ref / --triggered-by / --include-risky / --json`
+
+### PT4 — 대시보드 Server Action
+- [x] `app/actions/tests.ts` — `runScenario(device, ref, includeRisky?)` + `recordManualCheck(...)`
+- [x] Python spawn + UTF-8 환경변수 + 10분 타임아웃 + revalidatePath
+
+### PT5 — tests-grid 통합 UI
+- [x] 셀에 통합 판정 뱃지 (PASS / FAIL / WAIT / N/A / —)
+- [x] 셀 클릭 시 펼침 — 자동 시나리오 표 + 수동 체크박스(PASS/FAIL/SKIP)
+- [x] Run Test / Run + Risky 버튼
+
+### PT6 — 자동 트리거 통합 가이드
+- [x] `integration/patch_smoke.md` 작성 — `main.py` 의 `run_check()` 끝에 `_trigger_scenarios()` 호출 3단계 패치
+- [ ] **사용자 작업**: main.py 패치 적용 후 `python main.py --once` 검증
+
+### PT7 — Phase A 자동화 확장 (OCR + 음성 검색)
+- [x] scenario_runner — screen_capture / screen_capture_ocr / am_voice_search step + assert_ocr_* assertion
+- [x] Tesseract 자동 탐색 (TESSERACT_EXE 환경변수 → 표준 경로 → PATH 순)
+- [x] Katniss yaml — `voice_search_result_page` 자동 step 추가
+- [ ] **사용자 작업**: Tesseract OCR 설치 검증 (kor + eng), 다른 패키지 yaml dump 키워드 보정
+
+### 자동 시작 — Task Scheduler 작업 2개
+| 작업명 | 동작 | 트리거 |
+|---|---|---|
+| GTVS Dashboard | `start-prod.vbs` → `next start` | 로그온 시 (기존) |
+| GTVS Tunnel | `start-tunnel.vbs` → `cloudflared tunnel --url http://localhost:3000` | 로그온 시 (P1에서 신규) |

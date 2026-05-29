@@ -125,3 +125,44 @@
   - `gtvs.db` → `gtvs-YYYYMMDD.db`로 복사 → Google Drive 폴더(`C:\Users\k251110\Google Drive\gtvs-backups\`)에 두고 Google Drive 클라이언트가 자동 동기화
   - 30일 이상 된 백업은 자동 삭제
 - SQLite는 단일 파일이라 백업은 단순 복사 (단, 진행 중 트랜잭션이 있으면 손상 가능 → `sqlite3 gtvs.db ".backup gtvs-YYYYMMDD.db"` 명령 사용 권장)
+
+## 2026-05-28 — 외부 노출(cloudflared) + Gemini AI 연동 결정
+
+### 배경
+- 단일 노트북 운영 상태에서 사용자가 "다른 노트북·다른 IP에서도 대시보드를 열고 운용"하고 싶다는 요구. 별도로 "Gemini API를 활용한 웹앱"이라는 표현이 함께 나왔으나 의미가 모호했음.
+
+### Gemini API 오해 정리
+- 사용자가 "Gemini API 키로 다른 IP에서 접속 가능한 웹앱을 만들 수 있는지"를 반복 질문. 결론은 **불가**.
+- Gemini API는 LLM 호출 엔드포인트(텍스트/이미지 입력 → 응답 생성)일 뿐, 호스팅 서비스가 아님. API 키는 그 호출의 인증 수단이지 웹사이트 호스팅 자격이 아님.
+- 외부 접속을 가능하게 만드는 것은 **별개의 인프라(터널 또는 호스팅)** 작업이고, Gemini는 그 위에 얹는 부가 기능(요약/챗봇 등).
+
+### 외부 접속 — cloudflared 선택
+- 옵션 비교
+  - **A. Cloudflare Tunnel** — 회사 정책 허용(메모리에 기록됨), 무료(터널 자체), HTTPS 자동, 공인 IP 불필요
+  - **B. 사내 LAN 개방** — 동일 사무실 내 노트북만 접속 가능. 외부 인터넷 불가
+  - **C. 회사 VPN** — 회사 VPN 운용 정보가 명확하지 않음
+  - **D. mesh VPN(Tailscale 등)** — 회사 도구 정책으로 금지
+- 선택: **A. Cloudflare Tunnel**
+- 이유: 노트북 그대로 두고 외부 노출만 추가 가능. 공인 IP/포트포워딩 불필요. 회사 정책 부합.
+
+### 도메인 정책 — 일단 도메인 없이 Quick Tunnel
+- Cloudflare Tunnel은 두 가지 모드
+  - **Quick Tunnel**(`cloudflared tunnel --url http://localhost:3000`) — 도메인 불필요. `https://<랜덤>.trycloudflare.com` 즉시 발급. cloudflared 재시작 시 URL 변경.
+  - **Named Tunnel** — Cloudflare에 등록된 도메인 필요. URL 고정.
+- 사용자가 "도메인 없이 진행"을 명시. 일단 Quick Tunnel로 시작.
+- URL 변경 부담은 `.runlogs/tunnel-url.txt`에 자동 기록 + 외부 사용자에게 공유.
+- 운영 단계에서 URL 고정이 꼭 필요해지면 Cloudflare Registrar에서 `.com`(약 $9/년) 구입 → Named Tunnel로 전환.
+
+### Gemini — 무료 티어로 운영
+- 2.5 Flash 10 RPM / 250 req/day, Flash-Lite 15 RPM / 1000 req/day. 신용카드 불필요.
+- 호출 패턴 — 페이지 진입 시 요약 카드(P3) + 행 클릭 시 코멘트(P4) + 챗봇(P5) + 이메일 발송 시 1회(P6). 캐시(`gemini_cache` 테이블) 적용하면 무료 한도 안에서 운영 가능.
+- 임의 SQL 생성은 금지. P5 챗봇은 사전 정의 인텐트 → SQL 매핑(tool calling 또는 함수 디스패치) 방식.
+
+### 보안 변화
+- 기존 — localhost only. NextAuth 1명 사용자(가벼운 보호).
+- 변경 후 — 인터넷에서 URL을 알면 누구나 로그인 페이지에 도달. NextAuth가 유일한 보호선.
+- 추가 보호 가능성 — Cloudflare Access로 SSO 게이팅(50명까지 무료). 현 단계에서는 NextAuth만 두고 운영해보고, 필요 시 Access 추가.
+
+### 우선순위
+- 외부 노출(P1) 먼저 — Gemini는 그 다음. 외부 접속이 안 되면 Gemini를 붙여도 본인만 쓰는 상황이 변하지 않음.
+- 한 번에 다 만들지 않고 P0→P1→…→P6 단계로 분할. 각 단계마다 검증 후 다음으로.
