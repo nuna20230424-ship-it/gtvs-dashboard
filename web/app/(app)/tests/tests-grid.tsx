@@ -34,6 +34,7 @@ interface Spec {
   manual_checks: SpecStep[];
 }
 interface TestRunLatest {
+  id: number;
   device: string;
   package: string;
   scenario_id: string;
@@ -43,6 +44,8 @@ interface TestRunLatest {
   finished_at: string | null;
   log_excerpt: string | null;
   triggered_by: string;
+  measurements: string | null;
+  screenshot_path: string | null;
 }
 interface ManualCheckLatest {
   device: string;
@@ -134,6 +137,16 @@ function stepResultStyle(r: string | undefined): string {
   if (r === "fail" || r === "error") return "text-red-700 font-semibold";
   if (r === "skipped") return "text-gray-400";
   return "text-gray-400";
+}
+
+function parseMeasurements(json: string | null): Array<[string, string]> {
+  if (!json) return [];
+  try {
+    const obj = JSON.parse(json) as Record<string, unknown>;
+    return Object.entries(obj).map(([k, v]) => [k, String(v)]);
+  } catch {
+    return [];
+  }
 }
 
 export function TestsGrid({
@@ -344,7 +357,8 @@ export function TestsGrid({
                     <th className="px-2 py-1">ID</th>
                     <th className="px-2 py-1">설명</th>
                     <th className="px-2 py-1">결과</th>
-                    <th className="px-2 py-1">사유</th>
+                    <th className="px-2 py-1">사유 / 측정값</th>
+                    <th className="px-2 py-1">화면</th>
                     <th className="px-2 py-1">시작</th>
                     <th className="px-2 py-1">트리거</th>
                   </tr>
@@ -386,7 +400,40 @@ export function TestsGrid({
                         <td className={`px-2 py-1 ${stepResultStyle(r?.result)}`}>
                           {r?.result ?? "—"}
                         </td>
-                        <td className="px-2 py-1 text-gray-600">{r?.reason ?? ""}</td>
+                        <td className="px-2 py-1 text-gray-600">
+                          {r?.reason && (
+                            <div className="text-red-700">{r.reason}</div>
+                          )}
+                          {r?.measurements && (
+                            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-gray-700">
+                              {parseMeasurements(r.measurements).map(([k, v]) => (
+                                <span key={k}>
+                                  <span className="text-gray-400">{k}=</span>
+                                  {v}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          {r?.screenshot_path ? (
+                            <a
+                              href={`/api/screenshot?id=${r.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block w-16"
+                              title="클릭하여 확대"
+                            >
+                              <img
+                                src={`/api/screenshot?id=${r.id}`}
+                                alt="screenshot"
+                                className="h-9 w-16 rounded border border-gray-200 object-cover hover:opacity-80"
+                              />
+                            </a>
+                          ) : (
+                            <span className="text-[11px] text-gray-300">—</span>
+                          )}
+                        </td>
                         <td className="px-2 py-1 font-mono text-[11px] text-gray-500">
                           {fmt(r?.started_at)}
                         </td>

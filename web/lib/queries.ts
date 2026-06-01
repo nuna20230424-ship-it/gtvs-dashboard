@@ -347,6 +347,7 @@ export function listChangedPackagesSinceReport(): Set<string> {
 // =============================================================================
 
 export interface TestRunLatest {
+  id: number;
   device: string;
   package: string;
   scenario_id: string;
@@ -356,6 +357,8 @@ export interface TestRunLatest {
   finished_at: string | null;
   log_excerpt: string | null;
   triggered_by: string;
+  measurements: string | null;     // JSON 문자열 (사람 검증 보조)
+  screenshot_path: string | null;  // 절대 경로 (API Route 가 응답)
 }
 
 export interface ManualCheckLatest {
@@ -372,9 +375,11 @@ export interface ManualCheckLatest {
 export function listLatestTestRuns(): TestRunLatest[] {
   return db
     .prepare(
-      `select device, package, scenario_id, result, reason, started_at, finished_at, log_excerpt, triggered_by
+      `select id, device, package, scenario_id, result, reason, started_at, finished_at,
+              log_excerpt, triggered_by, measurements, screenshot_path
        from (
-         select device, package, scenario_id, result, reason, started_at, finished_at, log_excerpt, triggered_by,
+         select id, device, package, scenario_id, result, reason, started_at, finished_at,
+                log_excerpt, triggered_by, measurements, screenshot_path,
                 row_number() over (partition by device, package, scenario_id order by started_at desc) rn
          from test_runs
          where device in (select name from devices where active = 1)
