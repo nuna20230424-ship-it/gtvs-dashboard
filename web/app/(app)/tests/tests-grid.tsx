@@ -1,7 +1,7 @@
 // 테스트 트리거 그리드 + 펼침 패널 — 자동(scenario_runner) 결과 + 수동 체크박스 통합
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import React, { useMemo, useState, useTransition } from "react";
 import { runScenario, recordManualCheck } from "@/app/actions/tests";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -160,6 +160,7 @@ export function TestsGrid({
 }: TestsGridProps) {
   const { toast } = useToast();
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
   const [pendingRun, startRun] = useTransition();
   const [pendingCheck, startCheck] = useTransition();
 
@@ -361,13 +362,17 @@ export function TestsGrid({
                     <th className="px-2 py-1">화면</th>
                     <th className="px-2 py-1">시작</th>
                     <th className="px-2 py-1">트리거</th>
+                    <th className="px-2 py-1">로그</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sel.spec.auto_steps.map((step) => {
                     const r = sel.runs.find((x) => x.scenario_id === step.id);
+                    const logKey = `${sel.device.name}::${sel.pkg.package}::${step.id}`;
+                    const logOpen = expandedLogs.has(logKey);
                     return (
-                      <tr key={step.id} className="border-t border-gray-100 align-top">
+                      <React.Fragment key={step.id}>
+                      <tr className="border-t border-gray-100 align-top">
                         <td className="px-2 py-1 font-mono text-[11px]">
                           {step.id}
                           {step.risky && (
@@ -438,7 +443,37 @@ export function TestsGrid({
                           {fmt(r?.started_at)}
                         </td>
                         <td className="px-2 py-1 text-gray-500">{r?.triggered_by ?? "—"}</td>
+                        <td className="px-2 py-1">
+                          {r?.log_excerpt ? (
+                            <button
+                              type="button"
+                              className="text-[11px] text-blue-600 underline hover:text-blue-900"
+                              onClick={() => {
+                                setExpandedLogs((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(logKey)) next.delete(logKey);
+                                  else next.add(logKey);
+                                  return next;
+                                });
+                              }}
+                            >
+                              {logOpen ? "닫기" : "로그"}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-gray-300">—</span>
+                          )}
+                        </td>
                       </tr>
+                      {logOpen && r?.log_excerpt && (
+                        <tr className="bg-gray-50">
+                          <td colSpan={8} className="border-t border-gray-200 px-3 py-2">
+                            <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-gray-700">
+{r.log_excerpt}
+                            </pre>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
